@@ -1,0 +1,13 @@
+{
+  "release": "2026HTSRev6",
+  "total_nodes": 29583,
+  "node_types": {
+    "heading": 961,
+    "tariff_item": 6673,
+    "statistical": 19856,
+    "subheading": 2093
+  },
+  "chapter_count": 98,
+  "pct_has_rate": 46,
+  "parsed_at": "2026-04-24T04:05:25.065620+00:00"
+}
