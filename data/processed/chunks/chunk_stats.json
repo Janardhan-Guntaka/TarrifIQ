@@ -1,0 +1,10 @@
+{
+  "node_chunks": 29583,
+  "heading_chunks": 1262,
+  "total_chunks": 30845,
+  "total_tokens": 1878366,
+  "avg_tokens": 60,
+  "chapters": 98,
+  "cost_openai_usd": 0.037567,
+  "chunked_at": "2026-04-25T00:36:48.439160+00:00"
+}

@@ -1,0 +1,24 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Secrets — never commit
+.env
+.streamlit/secrets.toml
+
+# Keep ChromaDB for deployment
+!.chroma/
+
+# Large raw data — don't commit
+data/raw/
+
+# Processed data — keep for deployment
+!data/processed/
+!data/manifest.json
+
+# Logs
+*.log
+logs/
