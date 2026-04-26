@@ -45,7 +45,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-MANIFEST = pathlib.Path("data/manifest.json")
+_HERE    = pathlib.Path(__file__).parent.parent.resolve()
+MANIFEST = _HERE / "data/manifest.json"
 
 
 # ── models ────────────────────────────────────────────────────────────────────

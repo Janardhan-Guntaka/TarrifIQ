@@ -39,10 +39,11 @@ from typing import Any
 import chromadb
 from chromadb.utils.embedding_functions import OllamaEmbeddingFunction
 
-# ── paths ─────────────────────────────────────────────────────────────────────
-CHUNKS_NODE = pathlib.Path("data/processed/chunks/chunks_node.jsonl")
-CHUNKS_HEAD = pathlib.Path("data/processed/chunks/chunks_heading.jsonl")
-CHROMA_DIR  = pathlib.Path(".chroma")
+# ── paths — absolute so they work from any working directory ─────────────────
+_HERE        = pathlib.Path(__file__).parent.parent.resolve()  # project root
+CHUNKS_NODE  = _HERE / "data/processed/chunks/chunks_node.jsonl"
+CHUNKS_HEAD  = _HERE / "data/processed/chunks/chunks_heading.jsonl"
+CHROMA_DIR   = _HERE / ".chroma"
 
 # ── collection names ──────────────────────────────────────────────────────────
 COL_NODES    = "hts_nodes"
@@ -52,7 +53,7 @@ COL_HEADINGS = "hts_headings"
 OLLAMA_URL   = "http://localhost:11434"
 EMBED_MODEL  = "nomic-embed-text"
 BATCH_SIZE   = 50   # chunks per embedding call — nomic handles 50 well
-MAX_CHARS    = 6000 # nomic-embed-text context = 8192 tokens ~ 6000 chars safe limit
+MAX_CHARS    = 2000 # nomic-embed-text: safe char limit per document (well under 8192 tok)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -125,6 +126,16 @@ def build_metadata(chunk: dict) -> dict:
     }
 
 
+def truncate_doc(text: str) -> str:
+    """Hard truncate to MAX_CHARS — prevents Ollama context overflow."""
+    if len(text) <= MAX_CHARS:
+        return text
+    # truncate at last complete word before limit
+    truncated = text[:MAX_CHARS]
+    last_space = truncated.rfind(" ")
+    return truncated[:last_space] + " …" if last_space > MAX_CHARS * 0.8 else truncated + " …"
+
+
 # ── batch upsert ──────────────────────────────────────────────────────────────
 
 def upsert_chunks(
@@ -132,23 +143,32 @@ def upsert_chunks(
     chunks: list[dict],
     label: str,
 ) -> None:
-    total   = len(chunks)
-    batches = (total + BATCH_SIZE - 1) // BATCH_SIZE
-    done    = 0
+    total = len(chunks)
+    done  = 0
 
     for i in range(0, total, BATCH_SIZE):
         batch     = chunks[i : i + BATCH_SIZE]
-        ids       = [c["chunk_id"]   for c in batch]
-        documents = [c["chunk_text"][:MAX_CHARS] for c in batch]  # truncate to model limit
-        metadatas = [build_metadata(c) for c in batch]
+        ids       = [c["chunk_id"]            for c in batch]
+        documents = [truncate_doc(c["chunk_text"]) for c in batch]
+        metadatas = [build_metadata(c)         for c in batch]
 
-        collection.upsert(
-            ids=ids,
-            documents=documents,
-            metadatas=metadatas,
-        )
-        done += len(batch)
-        batch_num = i // BATCH_SIZE + 1
+        try:
+            collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
+            done += len(batch)
+        except Exception as batch_err:
+            if "context length" in str(batch_err).lower() or "input length" in str(batch_err).lower():
+                # batch has a bad item — fall back to one-by-one
+                for cid, doc, meta in zip(ids, documents, metadatas):
+                    # hard truncate to 1000 chars as last resort
+                    safe_doc = doc[:1000] if len(doc) > 1000 else doc
+                    try:
+                        collection.upsert(ids=[cid], documents=[safe_doc], metadatas=[meta])
+                        done += 1
+                    except Exception as item_err:
+                        print(f"\n  SKIP {cid}: {item_err}")
+            else:
+                raise
+
         pct = int(100 * done / total)
         bar = "=" * int(pct / 5)
         print(f"\r  {label}: [{bar:<20}] {pct:3d}%  {done:,}/{total:,}", end="", flush=True)
