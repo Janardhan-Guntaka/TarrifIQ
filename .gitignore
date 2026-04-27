@@ -9,8 +9,8 @@ __pycache__/
 .env
 .streamlit/secrets.toml
 
-# Keep ChromaDB for deployment
-!.chroma/
+# ChromaDB — built at runtime by startup.py, never commit
+.chroma/
 
 # Large raw data — don't commit
 data/raw/

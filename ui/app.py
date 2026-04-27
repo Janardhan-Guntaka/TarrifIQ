@@ -30,6 +30,10 @@ try:
 except Exception:
     pass
 
+# Auto-build ChromaDB on first run (no .chroma/ on fresh Streamlit Cloud deploy)
+from startup import ensure_vector_store
+ensure_vector_store()
+
 import streamlit as st
 from typing import Optional
 
