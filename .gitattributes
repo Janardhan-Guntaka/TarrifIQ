@@ -1,2 +1,4 @@
 .chroma/**/*.bin filter=lfs diff=lfs merge=lfs -text
 .chroma/*.sqlite3 filter=lfs diff=lfs merge=lfs -text
+data/processed/chunks/chunks_node.jsonl filter=lfs diff=lfs merge=lfs -text
+data/processed/hts/hts_nodes.jsonl filter=lfs diff=lfs merge=lfs -text
