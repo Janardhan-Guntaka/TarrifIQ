@@ -313,7 +313,7 @@ def main():
             elapsed = time.time() - t0
 
         if not result:
-            st.error("Could not classify. Check Ollama is running: `ollama serve`")
+            st.error("Could not classify. Check your OpenAI API key is set in Streamlit secrets, or Ollama is running locally.")
             st.stop()
 
         st.markdown("---")

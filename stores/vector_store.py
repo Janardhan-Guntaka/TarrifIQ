@@ -1,62 +1,111 @@
 """
-stores/vector_store.py  — Phase 2, Step 2
-------------------------------------------
-Loads HTS chunks into ChromaDB using Ollama nomic-embed-text embeddings.
+stores/vector_store.py
+-----------------------
+ChromaDB vector store for HTS chunks.
+
+Embedding model:
+  Cloud / Streamlit: OpenAI text-embedding-3-small (when OPENAI_API_KEY set)
+  Local dev:         Ollama nomic-embed-text (fallback when no key)
+
+IMPORTANT — rebuild required when switching embedding models:
+  The .chroma/ collections must be built with the SAME model used for queries.
+  After setting OPENAI_API_KEY, rebuild with:
+    python stores/vector_store.py
 
 Two collections:
-  hts_nodes       — 29,583 individual node chunks (granular lookup)
-  hts_headings    — 1,262 heading summary chunks  (broad semantic search)
-
-ChromaDB persists to disk at .chroma/ — no server needed.
-Re-running is safe — existing collections are cleared and rebuilt.
-
-Embedding model: nomic-embed-text via Ollama (free, local, 768-dim)
-  Install: https://ollama.ai
-  Pull:    ollama pull nomic-embed-text
-
-Usage:
-  # Build / rebuild both collections
-  python stores/vector_store.py
-
-  # Query interactively to test retrieval
-  python stores/vector_store.py --query "laptop computer tariff rate"
-
-  # Query with chapter filter
-  python stores/vector_store.py --query "electric motor" --chapter 85
-
-  # Rebuild only one collection
-  python stores/vector_store.py --collection nodes
-  python stores/vector_store.py --collection headings
+  hts_nodes    — 29,583 individual HTS nodes (granular lookup)
+  hts_headings — 1,262 heading summaries (broad semantic search)
 """
 
 import argparse
 import json
+import os
 import pathlib
 import sys
 import time
 from typing import Any
 
 import chromadb
-from chromadb.utils.embedding_functions import OllamaEmbeddingFunction
 
-# ── paths — absolute so they work from any working directory ─────────────────
-_HERE        = pathlib.Path(__file__).parent.parent.resolve()  # project root
-CHUNKS_NODE  = _HERE / "data/processed/chunks/chunks_node.jsonl"
-CHUNKS_HEAD  = _HERE / "data/processed/chunks/chunks_heading.jsonl"
-CHROMA_DIR   = _HERE / ".chroma"
+# ── paths — absolute, work from any working directory ─────────────────────────
+_HERE       = pathlib.Path(__file__).parent.parent.resolve()
+CHUNKS_NODE = _HERE / "data/processed/chunks/chunks_node.jsonl"
+CHUNKS_HEAD = _HERE / "data/processed/chunks/chunks_heading.jsonl"
+CHROMA_DIR  = _HERE / ".chroma"
 
-# ── collection names ──────────────────────────────────────────────────────────
+# ── collection names ───────────────────────────────────────────────────────────
 COL_NODES    = "hts_nodes"
 COL_HEADINGS = "hts_headings"
 
-# ── embedding config ──────────────────────────────────────────────────────────
-OLLAMA_URL   = "http://localhost:11434"
-EMBED_MODEL  = "nomic-embed-text"
-BATCH_SIZE   = 50   # chunks per embedding call — nomic handles 50 well
-MAX_CHARS    = 2000 # nomic-embed-text: safe char limit per document (well under 8192 tok)
+# ── embedding settings ─────────────────────────────────────────────────────────
+OPENAI_EMBED_MODEL = "text-embedding-3-small"   # 1536-dim, $0.02/1M tokens
+OLLAMA_URL         = "http://localhost:11434"
+OLLAMA_EMBED_MODEL = "nomic-embed-text"          # 768-dim, free local
+BATCH_SIZE         = 50
+MAX_CHARS          = 2000
 
 
-# ── helpers ───────────────────────────────────────────────────────────────────
+# ── embedding function factory ─────────────────────────────────────────────────
+
+def get_embedding_fn():
+    """
+    Returns OpenAI embedding function when OPENAI_API_KEY is set,
+    otherwise falls back to Ollama for local development.
+
+    NOTE: Collections MUST be rebuilt when switching between models.
+    OpenAI produces 1536-dim vectors; Ollama nomic produces 768-dim.
+    Mixing them causes dimension mismatch errors in ChromaDB.
+    """
+    api_key = os.getenv("OPENAI_API_KEY", "")
+
+    if api_key:
+        from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
+        return OpenAIEmbeddingFunction(
+            api_key=api_key,
+            model_name=OPENAI_EMBED_MODEL,
+        )
+
+    # local fallback
+    from chromadb.utils.embedding_functions import OllamaEmbeddingFunction
+    return OllamaEmbeddingFunction(
+        url=f"{OLLAMA_URL}/api/embeddings",
+        model_name=OLLAMA_EMBED_MODEL,
+    )
+
+
+def get_embed_model_name() -> str:
+    """Return which model is currently active — for logging."""
+    return OPENAI_EMBED_MODEL if os.getenv("OPENAI_API_KEY") else OLLAMA_EMBED_MODEL
+
+
+# ── client ─────────────────────────────────────────────────────────────────────
+
+def get_client() -> chromadb.Client:
+    CHROMA_DIR.mkdir(exist_ok=True)
+    return chromadb.PersistentClient(path=str(CHROMA_DIR))
+
+
+# ── test embedding connection ──────────────────────────────────────────────────
+
+def test_embedding_fn(embed_fn) -> bool:
+    model = get_embed_model_name()
+    print(f"Testing embedding model: {model} …")
+    try:
+        result = embed_fn(["test connection"])
+        if result and len(result[0]) > 0:
+            print(f"  OK — dim: {len(result[0])}\n")
+            return True
+    except Exception as e:
+        print(f"  FAILED: {e}")
+        if "OPENAI" in model.upper() or "text-embedding" in model:
+            print("  Check: OPENAI_API_KEY is set correctly")
+        else:
+            print("  Check: ollama serve  +  ollama pull nomic-embed-text")
+        return False
+    return False
+
+
+# ── helpers ────────────────────────────────────────────────────────────────────
 
 def load_jsonl(path: pathlib.Path) -> list[dict]:
     if not path.exists():
@@ -71,98 +120,54 @@ def load_jsonl(path: pathlib.Path) -> list[dict]:
     return records
 
 
-def get_client() -> chromadb.Client:
-    CHROMA_DIR.mkdir(exist_ok=True)
-    return chromadb.PersistentClient(path=str(CHROMA_DIR))
-
-
-def get_embedding_fn() -> OllamaEmbeddingFunction:
-    return OllamaEmbeddingFunction(
-        url=f"{OLLAMA_URL}/api/embeddings",
-        model_name=EMBED_MODEL,
-    )
-
-
-def test_ollama(embed_fn: OllamaEmbeddingFunction) -> bool:
-    """Verify Ollama is running and nomic-embed-text is available."""
-    print(f"Testing Ollama ({EMBED_MODEL}) …")
-    try:
-        result = embed_fn(["test"])
-        if result and len(result[0]) > 0:
-            print(f"  OK — embedding dim: {len(result[0])}\n")
-            return True
-    except Exception as e:
-        print(f"  FAILED: {e}")
-        print(f"\n  Fix:")
-        print(f"    1. Is Ollama running?  Start it: ollama serve")
-        print(f"    2. Is model pulled?    Run:      ollama pull nomic-embed-text")
-        print(f"    3. Is port correct?    Expected: {OLLAMA_URL}")
-        return False
-    return False
-
-
-# ── metadata builder ──────────────────────────────────────────────────────────
-
 def build_metadata(chunk: dict) -> dict:
-    """
-    ChromaDB metadata must be flat dict with str/int/float/bool values only.
-    Lists and None are not allowed — convert to empty string.
-    """
     return {
-        "chunk_type":     chunk.get("chunk_type",     ""),
-        "hts_code":       chunk.get("hts_code",       ""),
-        "heading":        chunk.get("heading",        ""),
-        "chapter":        chunk.get("chapter",        ""),
-        "subheading":     chunk.get("subheading",     ""),
-        "node_type":      chunk.get("node_type",      ""),
-        "general_rate":   chunk.get("general_rate",   ""),
-        "special_rate":   chunk.get("special_rate",   "")[:200],  # cap length
-        "other_rate":     chunk.get("other_rate",     ""),
-        "unit_of_qty":    chunk.get("unit_of_qty",    ""),
-        "hts_release":    chunk.get("hts_release",    ""),
-        "doc_type":       chunk.get("doc_type",       "hts"),
-        "token_est":      chunk.get("token_est",      0),
-        "child_count":    chunk.get("child_count",    0),
+        "chunk_type":  chunk.get("chunk_type",  ""),
+        "hts_code":    chunk.get("hts_code",    ""),
+        "heading":     chunk.get("heading",     ""),
+        "chapter":     chunk.get("chapter",     ""),
+        "subheading":  chunk.get("subheading",  ""),
+        "node_type":   chunk.get("node_type",   ""),
+        "general_rate": chunk.get("general_rate", ""),
+        "special_rate": chunk.get("special_rate", "")[:200],
+        "other_rate":  chunk.get("other_rate",  ""),
+        "unit_of_qty": chunk.get("unit_of_qty", ""),
+        "hts_release": chunk.get("hts_release", ""),
+        "doc_type":    chunk.get("doc_type",    "hts"),
+        "token_est":   chunk.get("token_est",   0),
+        "child_count": chunk.get("child_count", 0),
     }
 
 
 def truncate_doc(text: str) -> str:
-    """Hard truncate to MAX_CHARS — prevents Ollama context overflow."""
     if len(text) <= MAX_CHARS:
         return text
-    # truncate at last complete word before limit
-    truncated = text[:MAX_CHARS]
+    truncated  = text[:MAX_CHARS]
     last_space = truncated.rfind(" ")
-    return truncated[:last_space] + " …" if last_space > MAX_CHARS * 0.8 else truncated + " …"
+    return (truncated[:last_space] + " …") if last_space > MAX_CHARS * 0.8 else (truncated + " …")
 
 
-# ── batch upsert ──────────────────────────────────────────────────────────────
+# ── upsert ─────────────────────────────────────────────────────────────────────
 
-def upsert_chunks(
-    collection: chromadb.Collection,
-    chunks: list[dict],
-    label: str,
-) -> None:
+def upsert_chunks(collection: chromadb.Collection, chunks: list[dict], label: str) -> None:
     total = len(chunks)
     done  = 0
 
     for i in range(0, total, BATCH_SIZE):
-        batch     = chunks[i : i + BATCH_SIZE]
-        ids       = [c["chunk_id"]            for c in batch]
+        batch     = chunks[i: i + BATCH_SIZE]
+        ids       = [c["chunk_id"]               for c in batch]
         documents = [truncate_doc(c["chunk_text"]) for c in batch]
-        metadatas = [build_metadata(c)         for c in batch]
+        metadatas = [build_metadata(c)             for c in batch]
 
         try:
             collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
             done += len(batch)
-        except Exception as batch_err:
-            if "context length" in str(batch_err).lower() or "input length" in str(batch_err).lower():
-                # batch has a bad item — fall back to one-by-one
+        except Exception as err:
+            if "context length" in str(err).lower() or "input length" in str(err).lower():
                 for cid, doc, meta in zip(ids, documents, metadatas):
-                    # hard truncate to 1000 chars as last resort
-                    safe_doc = doc[:1000] if len(doc) > 1000 else doc
+                    safe = doc[:1000] if len(doc) > 1000 else doc
                     try:
-                        collection.upsert(ids=[cid], documents=[safe_doc], metadatas=[meta])
+                        collection.upsert(ids=[cid], documents=[safe], metadatas=[meta])
                         done += 1
                     except Exception as item_err:
                         print(f"\n  SKIP {cid}: {item_err}")
@@ -170,64 +175,45 @@ def upsert_chunks(
                 raise
 
         pct = int(100 * done / total)
-        bar = "=" * int(pct / 5)
-        print(f"\r  {label}: [{bar:<20}] {pct:3d}%  {done:,}/{total:,}", end="", flush=True)
+        print(f"\r  {label}: [{'='*int(pct/5):<20}] {pct:3d}%  {done:,}/{total:,}", end="", flush=True)
 
-    print()  # newline after progress bar
+    print()
 
 
-# ── build collection ──────────────────────────────────────────────────────────
+# ── build collection ────────────────────────────────────────────────────────────
 
-def build_collection(
-    client:   chromadb.Client,
-    embed_fn: OllamaEmbeddingFunction,
-    name:     str,
-    chunks:   list[dict],
-) -> chromadb.Collection:
-
-    # delete + recreate for clean rebuild
+def build_collection(client, embed_fn, name: str, chunks: list[dict]):
     try:
         client.delete_collection(name)
-        print(f"  Cleared existing collection: {name}")
+        print(f"  Cleared: {name}")
     except Exception:
         pass
 
     collection = client.create_collection(
         name=name,
         embedding_function=embed_fn,
-        metadata={"hnsw:space": "cosine"},   # cosine similarity
+        metadata={"hnsw:space": "cosine"},
     )
-
-    start = time.time()
+    t0 = time.time()
     upsert_chunks(collection, chunks, name)
-    elapsed = time.time() - start
-
-    count = collection.count()
-    print(f"  Indexed {count:,} chunks in {elapsed:.1f}s "
-          f"({count/elapsed:.0f} chunks/sec)")
+    elapsed = time.time() - t0
+    count   = collection.count()
+    print(f"  Indexed {count:,} chunks in {elapsed:.1f}s ({count/elapsed:.0f}/s)")
     return collection
 
 
-# ── query helper ──────────────────────────────────────────────────────────────
+# ── query ───────────────────────────────────────────────────────────────────────
 
 def query_collection(
     collection: chromadb.Collection,
     query:      str,
-    n:          int   = 5,
-    chapter:    str   = "",
-    node_type:  str   = "",
+    n:          int = 5,
+    chapter:    str = "",
+    node_type:  str = "",
 ) -> list[dict]:
-    """
-    Query a collection with optional metadata filters.
-    Returns list of result dicts with document, metadata, distance.
-    """
     where: dict[str, Any] = {}
-
     if chapter and node_type:
-        where = {"$and": [
-            {"chapter":   {"$eq": chapter}},
-            {"node_type": {"$eq": node_type}},
-        ]}
+        where = {"$and": [{"chapter": {"$eq": chapter}}, {"node_type": {"$eq": node_type}}]}
     elif chapter:
         where = {"chapter": {"$eq": chapter}}
     elif node_type:
@@ -242,134 +228,85 @@ def query_collection(
         kwargs["where"] = where
 
     results = collection.query(**kwargs)
-
-    output = []
-    for doc, meta, dist in zip(
-        results["documents"][0],
-        results["metadatas"][0],
-        results["distances"][0],
-    ):
-        output.append({
-            "document": doc,
-            "metadata": meta,
-            "score":    round(1 - dist, 4),  # cosine similarity (1=identical)
-        })
-    return output
+    return [
+        {"document": doc, "metadata": meta, "score": round(1 - dist, 4)}
+        for doc, meta, dist in zip(
+            results["documents"][0],
+            results["metadatas"][0],
+            results["distances"][0],
+        )
+    ]
 
 
-# ── interactive test ──────────────────────────────────────────────────────────
+# ── interactive query ───────────────────────────────────────────────────────────
 
 def run_query(query: str, chapter: str = "") -> None:
     client   = get_client()
     embed_fn = get_embedding_fn()
-
-    print(f'\nQuery: "{query}"')
+    print(f'\nQuery: "{query}"  (model: {get_embed_model_name()})')
     if chapter:
-        print(f'Filter: chapter={chapter}')
+        print(f"Filter: chapter={chapter}")
     print()
 
-    # search headings first (broad)
-    try:
-        col_head = client.get_collection(COL_HEADINGS, embedding_function=embed_fn)
-        head_results = query_collection(col_head, query, n=3, chapter=chapter)
-        print("── Heading matches (broad) ───────────────────────────────────────")
-        for r in head_results:
-            m = r["metadata"]
-            print(f"  [{r['score']:.3f}] Heading {m['heading']}  "
-                  f"chapter={m['chapter']}  rate={m['general_rate']}")
-            # print first 2 lines of chunk text
-            lines = r["document"].split("\n")[:3]
-            for line in lines:
-                if line.strip():
-                    print(f"          {line.strip()[:100]}")
+    for col_name, label in [(COL_HEADINGS, "Heading"), (COL_NODES, "Node")]:
+        try:
+            col     = client.get_collection(col_name, embedding_function=embed_fn)
+            results = query_collection(col, query, n=4, chapter=chapter)
+            print(f"── {label} matches ──────────────────────────────────────────────")
+            for r in results:
+                m = r["metadata"]
+                print(f"  [{r['score']:.3f}] {m.get('hts_code') or m.get('heading',''):<16} "
+                      f"ch={m.get('chapter',''):<4} rate={m.get('general_rate') or '—'}")
+                print(f"          {r['document'].split(chr(10))[0][:100]}")
             print()
-    except Exception as e:
-        print(f"  headings collection not found: {e}")
-
-    # search nodes (granular)
-    try:
-        col_node = client.get_collection(COL_NODES, embedding_function=embed_fn)
-        # filter to tariff_item and subheading for most useful results
-        node_results = query_collection(col_node, query, n=5, chapter=chapter)
-        print("── Node matches (granular) ───────────────────────────────────────")
-        for r in node_results:
-            m = r["metadata"]
-            print(f"  [{r['score']:.3f}] {m['hts_code']:<16} "
-                  f"type={m['node_type']:<12} "
-                  f"rate={m['general_rate'] or '—':<8} "
-                  f"ch={m['chapter']}")
-            # first line of chunk text (description part)
-            first_line = r["document"].split(".")[0]
-            print(f"          {first_line[:100]}")
-            print()
-    except Exception as e:
-        print(f"  nodes collection not found: {e}")
+        except Exception as e:
+            print(f"  {col_name} not found: {e}\n")
 
 
-# ── main ──────────────────────────────────────────────────────────────────────
+# ── main ────────────────────────────────────────────────────────────────────────
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Build / query HTS vector store")
-    ap.add_argument("--query",      metavar="TEXT",
-                    help="Run a test query against the built collections")
-    ap.add_argument("--chapter",    metavar="CH",  default="",
-                    help="Filter query results to a specific chapter e.g. 84")
-    ap.add_argument("--collection", choices=["nodes", "headings", "both"],
-                    default="both", help="Which collection to build")
-    ap.add_argument("--resume-headings", action="store_true",
-                    help="Only rebuild hts_headings (nodes already built)")
-    ap.add_argument("--skip-build", action="store_true",
-                    help="Skip building — only run --query")
+    ap.add_argument("--query",           metavar="TEXT")
+    ap.add_argument("--chapter",         metavar="CH",  default="")
+    ap.add_argument("--collection",      choices=["nodes", "headings", "both"], default="both")
+    ap.add_argument("--resume-headings", action="store_true")
+    ap.add_argument("--skip-build",      action="store_true")
     args = ap.parse_args()
 
-    # ── query-only mode ───────────────────────────────────────────────────────
     if args.query and args.skip_build:
         run_query(args.query, chapter=args.chapter)
         return
 
-    # ── build mode ────────────────────────────────────────────────────────────
     if not args.skip_build:
         embed_fn = get_embedding_fn()
-        if not test_ollama(embed_fn):
+        if not test_embedding_fn(embed_fn):
             sys.exit(1)
 
         client = get_client()
 
-        # --resume-headings skips nodes (already built) and only does headings
         build_nodes    = not args.resume_headings and args.collection in ("nodes", "both")
         build_headings = args.resume_headings     or args.collection in ("headings", "both")
 
         if build_nodes:
-            print(f"Loading node chunks …")
-            node_chunks = load_jsonl(CHUNKS_NODE)
-            print(f"Building collection: {COL_NODES}  ({len(node_chunks):,} chunks)\n")
-            build_collection(client, embed_fn, COL_NODES, node_chunks)
+            chunks = load_jsonl(CHUNKS_NODE)
+            print(f"Building {COL_NODES}  ({len(chunks):,} chunks)  model={get_embed_model_name()}\n")
+            build_collection(client, embed_fn, COL_NODES, chunks)
             print()
 
         if build_headings:
-            print(f"Loading heading chunks …")
-            head_chunks = load_jsonl(CHUNKS_HEAD)
-            print(f"Building collection: {COL_HEADINGS}  ({len(head_chunks):,} chunks)\n")
-            build_collection(client, embed_fn, COL_HEADINGS, head_chunks)
+            chunks = load_jsonl(CHUNKS_HEAD)
+            print(f"Building {COL_HEADINGS}  ({len(chunks):,} chunks)  model={get_embed_model_name()}\n")
+            build_collection(client, embed_fn, COL_HEADINGS, chunks)
             print()
 
-        print("── Vector store ready ────────────────────────────────────────────")
-        print(f"  Location : {CHROMA_DIR.resolve()}")
-
-        client2 = get_client()
-        for col_name in [COL_NODES, COL_HEADINGS]:
+        print(f"── Done  ({CHROMA_DIR}) ─────────────────────────────────────────")
+        for name in [COL_NODES, COL_HEADINGS]:
             try:
-                col = client2.get_collection(col_name)
-                print(f"  {col_name:<20}: {col.count():,} chunks")
+                print(f"  {name:<20}: {client.get_collection(name).count():,} chunks")
             except Exception:
                 pass
 
-        print()
-        print("  Test your store:")
-        print('  python stores/vector_store.py --skip-build --query "laptop computer"')
-        print('  python stores/vector_store.py --skip-build --query "electric motor" --chapter 85')
-
-    # ── run query after build if provided ─────────────────────────────────────
     if args.query:
         run_query(args.query, chapter=args.chapter)
 
