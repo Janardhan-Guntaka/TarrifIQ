@@ -25,3 +25,7 @@ logs/
 data/processed/chunks/chunks_node.jsonl
 
 data/processed/hts/hts_nodes.jsonl
+
+data/processed/hts/hts_nodes.jsonl
+
+data/processed/chunks/chunks_node.jsonl
