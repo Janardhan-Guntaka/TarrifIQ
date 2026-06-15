@@ -7,9 +7,8 @@ __pycache__/
 
 # Secrets — never commit
 .env
-.streamlit/secrets.toml
 
-# ChromaDB — built at runtime by startup.py, never commit
+# Local vector DB artifacts (legacy — safe to delete if present)
 .chroma/
 
 # Large raw data — don't commit
@@ -22,10 +21,7 @@ data/raw/
 # Logs
 *.log
 logs/
+
+# Large chunk/node files (regenerate via ingestion)
 data/processed/chunks/chunks_node.jsonl
-
 data/processed/hts/hts_nodes.jsonl
-
-data/processed/hts/hts_nodes.jsonl
-
-data/processed/chunks/chunks_node.jsonl

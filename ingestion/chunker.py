@@ -365,7 +365,7 @@ def main() -> None:
     print_and_save_stats(node_chunks, head_chunks)
 
     print(f"\n── Done ──────────────────────────────────────────────────────────")
-    print(f"  Next: python stores/vector_store.py")
+    print("  Next: python -m backend.scripts.ingest_local --version <VERSION> --skip-parse --activate")
 
 
 if __name__ == "__main__":

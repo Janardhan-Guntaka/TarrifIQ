@@ -1,12 +1,16 @@
----
-title: TariffIQ
-emoji: 🛃
-colorFrom: red
-colorTo: red
-sdk: streamlit
-sdk_version: 1.56.0
-app_file: ui/app.py
-pinned: false
----
+# TariffIQ V2
 
-US Import Duty Calculator — HTS classification and tariff rates for importers.
+US import duty classification and estimation — FastAPI + LangGraph + Supabase pgvector + OpenAI.
+
+## Quick start
+
+See [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md).
+
+```powershell
+pip install -r requirements.txt
+python run.py api
+```
+
+```powershell
+python run.py classify "gaming laptop from China"
+```

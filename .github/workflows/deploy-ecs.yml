@@ -1,0 +1,39 @@
+# ECS deployment placeholder — wire secrets and ECR repo before enabling.
+# Trigger manually until AWS infrastructure exists.
+
+name: Deploy ECS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        env:
+          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+        run: |
+          if [ -z "$ECR_REPOSITORY" ]; then
+            echo "Set ECR_REPOSITORY repo variable before deploying"
+            exit 1
+          fi
+          docker build -f docker/Dockerfile -t $ECR_REPOSITORY:latest .
+          docker push $ECR_REPOSITORY:latest
+
+      - name: Deploy to ECS
+        run: |
+          echo "Update ECS service task definition to use :latest image"
+          echo "Wire ecs deploy action when cluster/service exist"

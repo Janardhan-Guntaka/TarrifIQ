@@ -378,7 +378,7 @@ def main() -> None:
     print_sample(nodes)
 
     print("\n── Done ──────────────────────────────────────────────────────────")
-    print("  Next: python ingestion/download_cross.py")
+    print("  Next: python -m backend.scripts.ingest_local --version <VERSION> --skip-parse --activate")
 
 
 if __name__ == "__main__":
