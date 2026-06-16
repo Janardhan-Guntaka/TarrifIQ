@@ -8,7 +8,7 @@ __pycache__/
 # Secrets — never commit
 .env
 
-# Local vector DB artifacts (legacy — safe to delete if present)
+# Local vector DB artifacts (legacy)
 .chroma/
 
 # Large raw data — don't commit
