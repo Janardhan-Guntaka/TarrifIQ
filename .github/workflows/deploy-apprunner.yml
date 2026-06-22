@@ -1,0 +1,90 @@
+# Build Docker image → ECR → update AWS App Runner service.
+# One-time setup: docs/DEPLOY_2HOUR.md (ECR repo, App Runner service, GitHub secrets).
+
+name: Deploy App Runner
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "docker/**"
+      - "ingestion/**"
+      - ".github/workflows/deploy-apprunner.yml"
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        env:
+          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          if [ -z "$ECR_REPOSITORY" ]; then
+            echo "Set repository variable ECR_REPOSITORY (e.g. tariffiq-api)"
+            exit 1
+          fi
+          REGISTRY="${{ steps.ecr.outputs.registry }}"
+          IMAGE_URI="${REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+          docker build -f docker/Dockerfile -t "${IMAGE_URI}" -t "${REGISTRY}/${ECR_REPOSITORY}:latest" .
+          docker push "${IMAGE_URI}"
+          docker push "${REGISTRY}/${ECR_REPOSITORY}:latest"
+          echo "IMAGE_URI=${IMAGE_URI}" >> "$GITHUB_ENV"
+
+      - name: Update App Runner service
+        env:
+          APP_RUNNER_SERVICE_ARN: ${{ vars.APP_RUNNER_SERVICE_ARN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_JWT_SECRET: ${{ secrets.SUPABASE_JWT_SECRET }}
+          CORS_ORIGINS: ${{ vars.CORS_ORIGINS }}
+        run: |
+          if [ -z "$APP_RUNNER_SERVICE_ARN" ]; then
+            echo "Set APP_RUNNER_SERVICE_ARN after first App Runner create (see docs/DEPLOY_2HOUR.md)"
+            exit 1
+          fi
+          CORS="${CORS_ORIGINS:-http://localhost:3000}"
+          aws apprunner update-service \
+            --service-arn "$APP_RUNNER_SERVICE_ARN" \
+            --source-configuration "{
+              \"ImageRepository\": {
+                \"ImageIdentifier\": \"${IMAGE_URI}\",
+                \"ImageRepositoryType\": \"ECR\",
+                \"ImageConfiguration\": {
+                  \"Port\": \"8000\",
+                  \"RuntimeEnvironmentVariables\": {
+                    \"ENVIRONMENT\": \"production\",
+                    \"DATABASE_URL\": \"${DATABASE_URL}\",
+                    \"OPENAI_API_KEY\": \"${OPENAI_API_KEY}\",
+                    \"SUPABASE_URL\": \"${SUPABASE_URL}\",
+                    \"SUPABASE_ANON_KEY\": \"${SUPABASE_ANON_KEY}\",
+                    \"SUPABASE_SERVICE_ROLE_KEY\": \"${SUPABASE_SERVICE_ROLE_KEY}\",
+                    \"SUPABASE_JWT_SECRET\": \"${SUPABASE_JWT_SECRET}\",
+                    \"CORS_ORIGINS\": \"${CORS}\"
+                  }
+                }
+              },
+              \"AutoDeploymentsEnabled\": false
+            }"
+          aws apprunner start-deployment --service-arn "$APP_RUNNER_SERVICE_ARN"

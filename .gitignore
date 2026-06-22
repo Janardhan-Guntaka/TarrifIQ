@@ -22,6 +22,11 @@ data/raw/
 *.log
 logs/
 
+# Node / Next.js
+node_modules/
+apps/web/.next/
+apps/web/.env.local
+
 # Large chunk/node files (regenerate via ingestion)
 data/processed/chunks/chunks_node.jsonl
 data/processed/hts/hts_nodes.jsonl
