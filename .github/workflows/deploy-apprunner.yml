@@ -87,4 +87,25 @@ jobs:
               },
               \"AutoDeploymentsEnabled\": false
             }"
-          aws apprunner start-deployment --service-arn "$APP_RUNNER_SERVICE_ARN"
+          # update-service already starts a deployment; do not call start-deployment
+          # while status is OPERATION_IN_PROGRESS (that causes InvalidRequestException).
+          echo "Waiting for App Runner to reach RUNNING..."
+          for i in $(seq 1 40); do
+            STATUS=$(aws apprunner describe-service \
+              --service-arn "$APP_RUNNER_SERVICE_ARN" \
+              --query "Service.Status" --output text)
+            echo "  Status: $STATUS ($i/40)"
+            if [ "$STATUS" = "RUNNING" ]; then
+              URL=$(aws apprunner describe-service \
+                --service-arn "$APP_RUNNER_SERVICE_ARN" \
+                --query "Service.ServiceUrl" --output text)
+              echo "Deploy complete: https://${URL}/health"
+              exit 0
+            fi
+            if [ "$STATUS" = "CREATE_FAILED" ] || [ "$STATUS" = "UPDATE_FAILED" ]; then
+              echo "App Runner deploy failed: $STATUS"
+              exit 1
+            fi
+            sleep 15
+          done
+          echo "Service still updating — check AWS Console → App Runner"
