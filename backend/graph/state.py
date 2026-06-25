@@ -50,6 +50,9 @@ class TradeQueryState(TypedDict):
     escalate_reason: str
     error: str
 
+    in_domain: bool
+    off_topic_message: str
+
     request_id: str
     user_id: str
 
@@ -114,6 +117,8 @@ def empty_state(
         escalate=False,
         escalate_reason="",
         error="",
+        in_domain=True,
+        off_topic_message="",
         request_id=request_id,
         user_id=user_id,
     )

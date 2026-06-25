@@ -79,6 +79,15 @@ def _build_citations(state: TradeQueryState) -> list[str]:
 
 
 def synthesizer(state: TradeQueryState) -> TradeQueryState:
+    if state.get("in_domain") is False:
+        msg = state.get("off_topic_message") or state.get("final_answer", "")
+        return {
+            **state,
+            "final_answer": msg,
+            "citations": [],
+            "disclaimer": state.get("disclaimer") or DEFAULT_DISCLAIMER,
+        }
+
     if state.get("error") and not state.get("escalate"):
         return {
             **state,

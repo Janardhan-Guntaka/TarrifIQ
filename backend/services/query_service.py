@@ -109,6 +109,7 @@ class QueryService:
             "disclaimer": state.get("disclaimer", ""),
             "meta": {
                 "latency_ms": latency_ms,
+                "off_topic": state.get("in_domain") is False,
                 "models": {
                     "embed": get_deps().embedding_service.model_name,
                     "llm": get_deps().llm_service.model_name,

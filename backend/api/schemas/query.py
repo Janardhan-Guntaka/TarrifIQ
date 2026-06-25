@@ -33,3 +33,4 @@ class QueryListItem(BaseModel):
     latency_ms: Optional[int] = None
     escalate: bool = False
     created_at: Any = None
+    response_json: Optional[dict[str, Any]] = None

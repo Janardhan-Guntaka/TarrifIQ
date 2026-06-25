@@ -24,16 +24,42 @@ pip install langgraph
 
 ## 2. Configure environment
 
-Set in `.env` (never commit):
+Copy `.env.example` → `.env` and fill secrets. **Never commit `.env`.**
+
+| Variable | Local dev | Cloud (AWS/GitHub) |
+|----------|-----------|---------------------|
+| `SUPABASE_URL`, keys | Same project | Same — set as GitHub Secrets |
+| `SUPABASE_DB_PASSWORD` + `DATABASE_CONNECTION` | Auto-builds Postgres URL | — |
+| `DATABASE_URL` | Optional override | **Required** — paste direct URI from Supabase → Connect |
+| `CORS_ORIGINS` | `http://localhost:3000` | Add your Vercel URL |
+
+**Find a working DB connection locally:**
+
+```powershell
+python scripts/test_db_connection.py
+```
+
+**Frontend** (`apps/web`):
+
+```powershell
+Copy-Item .env.local.example .env.local
+# NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
+**Cloud reference:** `env/cloud.env.example` (GitHub Secrets + App Runner)
+
+Required backend vars:
 
 - `OPENAI_API_KEY`
-- `DATABASE_URL` — Supabase → Settings → Database → URI (replace `[YOUR-PASSWORD]`)
 - `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
-- `SUPABASE_JWT_SECRET` — Supabase → Settings → API → JWT Secret (for authenticated routes)
+- `SUPABASE_DB_PASSWORD` + `DATABASE_CONNECTION` **or** explicit `DATABASE_URL`
+- `SUPABASE_JWT_SECRET` — for authenticated routes
 
 ## 3. Run database migrations
 
-In Supabase SQL Editor, run in order:
+Already applied on project `tariffiq-prod` via Supabase (tables: `hts_releases`, `hts_nodes`, `hts_embeddings`, `policy_snapshots`, etc.).
+
+To re-run manually in Supabase SQL Editor:
 
 1. `supabase/migrations/001_initial_schema.sql`
 2. `supabase/migrations/002_seed_policy_snapshots.sql`

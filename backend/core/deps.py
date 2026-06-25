@@ -7,6 +7,7 @@ from backend.repositories.pgvector import PgVectorRepository
 from backend.repositories.policy import PolicyRepository
 from backend.repositories.queries import QueryRepository
 from backend.repositories.releases import ReleaseRepository
+from backend.repositories.users import UserRepository
 from backend.services.embedding_service import OpenAIEmbeddingService
 from backend.services.llm_service import OpenAILLMService
 
@@ -22,6 +23,7 @@ class AppDependencies:
         self.policy = PolicyRepository()
         self.queries = QueryRepository()
         self.releases = ReleaseRepository()
+        self.users = UserRepository()
 
 
 @lru_cache

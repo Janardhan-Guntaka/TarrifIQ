@@ -28,7 +28,7 @@ def get_pool() -> ConnectionPool:
         settings = get_settings()
         settings.require_database()
         _pool = ConnectionPool(
-            conninfo=settings.database_url,
+            conninfo=settings.resolved_database_url,
             min_size=1,
             max_size=10,
             kwargs={"row_factory": dict_row},

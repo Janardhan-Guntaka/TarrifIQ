@@ -27,6 +27,12 @@ node_modules/
 apps/web/.next/
 apps/web/.env.local
 
+# IDE / local tooling
+.cursor/
+
+# App Runner deploy temp (may contain secrets)
+infra/apprunner/.tmp/
+
 # Large chunk/node files (regenerate via ingestion)
 data/processed/chunks/chunks_node.jsonl
 data/processed/hts/hts_nodes.jsonl

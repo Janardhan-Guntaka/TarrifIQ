@@ -62,7 +62,7 @@ class QueryRepository:
             rows = conn.execute(
                 """
                 SELECT id, raw_query, country, selected_hts_code, confidence,
-                       hts_release, latency_ms, escalate, created_at
+                       hts_release, latency_ms, escalate, created_at, response_json
                 FROM queries
                 WHERE user_id = %s
                 ORDER BY created_at DESC

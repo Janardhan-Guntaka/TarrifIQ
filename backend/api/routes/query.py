@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from backend.api.middleware.auth import get_current_user_id, get_optional_user_id
+from backend.api.middleware.auth import get_current_user, get_current_user_id, get_optional_user
 from backend.api.schemas.query import ClassifyRequest, ClassifyResponse, QueryListItem
 from backend.core.deps import get_deps
 from backend.services.query_service import QueryService
@@ -13,13 +13,16 @@ router = APIRouter(prefix="/v1", tags=["query"])
 @router.post("/classify", response_model=ClassifyResponse)
 def classify(
     body: ClassifyRequest,
-    user_id=Depends(get_optional_user_id),
+    user=Depends(get_optional_user),
 ):
     """
     Classify product and estimate duties.
     Auth optional in development — set Authorization: Bearer <jwt> when configured.
     """
     try:
+        user_id = user.id if user else None
+        if user:
+            get_deps().users.upsert(user.id, user.email or f"{user.id}@users.local")
         result = QueryService().classify(
             raw_query=body.query,
             country=body.country,
