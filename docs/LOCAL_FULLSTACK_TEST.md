@@ -6,9 +6,11 @@
 2. Create [Google OAuth client](https://console.cloud.google.com/apis/credentials) (Web application)
    - Authorized redirect URI: `https://foajphcyejhsafivkhdi.supabase.co/auth/v1/callback`
 3. Paste Client ID + Secret into Supabase Google provider settings
-4. **Authentication** → **URL Configuration** → Redirect URLs:
-   - `http://localhost:3000/auth/callback`
-   - `https://YOUR_VERCEL_APP.vercel.app/auth/callback` (after Vercel deploy)
+4. **Authentication** → **URL Configuration**:
+   - **Site URL:** `https://tarrif-iq-one.vercel.app` (or your Vercel production URL)
+   - **Redirect URLs** (add both):
+     - `http://localhost:3000/auth/callback`
+     - `https://tarrif-iq-one.vercel.app/auth/callback`
 
 ## 2. Frontend env (`apps/web/.env.local`)
 
