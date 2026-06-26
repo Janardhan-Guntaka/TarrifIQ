@@ -6,6 +6,7 @@ Describe a product in plain language (e.g. *"steel water bottles from China, cus
 
 **Production API:** `https://vkujyyvbhk.us-east-1.awsapprunner.com`  
 **Health check:** [`/health`](https://vkujyyvbhk.us-east-1.awsapprunner.com/health)
+**Live Link:** (https://tarrif-iq-one.vercel.app/)
 
 ---
 
